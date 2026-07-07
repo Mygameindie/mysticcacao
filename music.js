@@ -64,8 +64,8 @@
   petImgs[0].b.src = "base_music2.png";
 
   // Pet 2 dance frames (add these files). If missing, it will fallback to pet1.
-  petImgs[1].a.src = "base_music1_2.png";
-  petImgs[1].b.src = "base_music2_2.png";
+  petImgs[1].a.src = "base_music1_1.png";
+  petImgs[1].b.src = "base_music1_2.png";
 
   petImgs[0].current = petImgs[0].a;
   petImgs[1].current = petImgs[1].a;

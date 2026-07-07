@@ -5,6 +5,8 @@
 // ===========================================================
 (() => {
   const SAVE_KEY = "purelilypet_save";
+  // Two pets. Character 2 uses the exact same stats system as character 1
+  // (same defaults, same decay rates, same interaction effects).
   const NUM_PETS = 2;
 
   // Stat decay rates (points lost per second)

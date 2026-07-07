@@ -3,5 +3,10 @@
     "id": "toy_1",
     "src": "toy_1.png",
     "alt": "Toy 1"
+  },
+  {
+    "id": "toy_2",
+    "src": "toy_2.png",
+    "alt": "Toy 2"
   }
 ]

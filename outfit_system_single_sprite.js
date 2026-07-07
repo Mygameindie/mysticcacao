@@ -9,11 +9,12 @@
 // tinting, the layering by z, and the girl/boy clothing rules.
 //
 // Rules preserved from before:
-// - Pet 1 is the girl: top underwear + bottom underwear, or a one-piece.
-// - Pet 2 is the boy: bottom underwear / boxers only (no top/one-piece).
-// - Girl one-piece clears top/bottom underwear.
-// - Girl top/bottom underwear clears one-piece and auto-pairs the matching
-//   set number.
+// - Top underwear + bottom underwear, OR a one-piece (mutually exclusive).
+// - A one-piece is a complete set: selecting it clears top/bottom underwear.
+// - Switching OFF a one-piece to a separate piece completes the set: picking
+//   top1 also puts on the matching bottom1 (and vice versa).
+// - Once you're already wearing separates, they are independent: changing one
+//   does NOT change the other, so you can mix freely (top1 + bottom2).
 // - Dress clears top + bottom; top or bottom clears dress.
 (() => {
   const DEFAULT_COLOR = "Original";
@@ -36,8 +37,8 @@
       { key: "shoes", label: "Shoes", z: 90 },
       { key: "hat", label: "Hat", z: 180 },
     ],
-    pet1: {}, pet2: {},
-    defaults: { pet1: {}, pet2: {} },
+    pet1: {},
+    defaults: { pet1: {} },
   };
 
   // ---- Helpers --------------------------------------------------------------
@@ -90,13 +91,19 @@
     key: c.key, label: c.label || c.key, z: Number(c.z) || 100,
   }));
 
+  // Both pets share the same dress-up system. Character 2 (index 1) reads its
+  // wardrobe from cfg.pet2 (same structure as pet1, "_2" art).
+  const PETS = [0, 1];
+  const wardrobeFor = p => (p === 1 ? cfg.pet2 : cfg.pet1) || {};
+  const defaultsFor = p => (cfg.defaults && (p === 1 ? cfg.defaults.pet2 : cfg.defaults.pet1)) || {};
+
   function buildCatalog() {
-    const catalog = { 0: {}, 1: {} };
-    [0, 1].forEach(p => cats.forEach(c => { catalog[p][c.key] = emptyCat(c); }));
-    const wardrobes = { 0: cfg.pet1 || {}, 1: cfg.pet2 || {} };
-    [0, 1].forEach(p => {
+    const catalog = {};
+    PETS.forEach(p => { catalog[p] = {}; cats.forEach(c => { catalog[p][c.key] = emptyCat(c); }); });
+    PETS.forEach(p => {
+      const wardrobe = wardrobeFor(p);
       cats.forEach(c => {
-        const list = wardrobes[p][c.key];
+        const list = wardrobe[c.key];
         if (!Array.isArray(list)) return;
         list.forEach(entry => {
           const it = normItem(entry);
@@ -108,9 +115,8 @@
   }
 
   const defaults = (() => {
-    const out = { 0: {}, 1: {} };
-    const src = { 0: (cfg.defaults && cfg.defaults.pet1) || {}, 1: (cfg.defaults && cfg.defaults.pet2) || {} };
-    [0, 1].forEach(p => cats.forEach(c => { out[p][c.key] = src[p][c.key] != null ? src[p][c.key] : 0; }));
+    const out = {};
+    PETS.forEach(p => { out[p] = {}; const src = defaultsFor(p); cats.forEach(c => { out[p][c.key] = src[c.key] != null ? src[c.key] : 0; }); });
     return out;
   })();
 
@@ -118,14 +124,14 @@
   if (typeof window.activePetIndex !== "number") window.activePetIndex = 0;
 
   function makeSelected() {
-    return [0, 1].map(p => {
+    return PETS.map(p => {
       const o = {};
       cats.forEach(c => o[c.key] = defaults[p][c.key] != null ? defaults[p][c.key] : 0);
       return o;
     });
   }
   function makeColors() {
-    return [0, 1].map(() => {
+    return PETS.map(() => {
       const o = {};
       cats.forEach(c => o[c.key] = DEFAULT_COLOR);
       return o;
@@ -134,28 +140,29 @@
 
   window.selectedClothes = window.selectedClothes || makeSelected();
   window.clothingColors = window.clothingColors || makeColors();
-  window.currentOutfits = [0, 0];
+  window.currentOutfits = PETS.map(() => 0);
   window.currentOutfit = 0;
 
   function activePet() {
-    const n = Number(window.activePetIndex);
-    return Number.isFinite(n) ? Math.max(0, Math.min(1, Math.floor(n))) : 0;
+    const p = window.activePetIndex;
+    return PETS.includes(p) ? p : 0;
   }
 
+  // Only show categories this character actually owns clothes for. This is what
+  // enforces the boy clothing rules: character 2 (boy) has no top underwear,
+  // one-piece, dress, or bunnysuit-bow items, so those tabs never appear.
   function catKeys(p = activePet()) {
     const catalog = window.dressUpCatalog[p] || window.dressUpCatalog[0] || {};
     return cats.map(c => c.key).filter(k => {
-      if (!catalog[k]) return false;
-      // Pet 2 (boy) has no top underwear / one-piece underwear.
-      if (p === 1 && (k === "topUnderwear" || k === "onepieceUnderwear")) return false;
-      return true;
+      const cat = catalog[k];
+      return cat && Object.keys(cat.items || {}).length > 1; // more than just "None"
     });
   }
 
   function normalizeState() {
     const sel = makeSelected();
     const cols = makeColors();
-    [0, 1].forEach(p => {
+    PETS.forEach(p => {
       window.selectedClothes[p] = window.selectedClothes[p] || {};
       window.clothingColors[p] = window.clothingColors[p] || {};
       cats.forEach(c => {
@@ -166,10 +173,12 @@
   }
 
   // ---- Clothing rules -------------------------------------------------------
+  // Set number = the trailing digits of an id ("bottomunderwear3" -> "3").
   function setNumberFromId(id) {
     const m = String(id || "").match(/(\d+)(?:_\d+)?$/);
     return m ? m[1] : null;
   }
+  // Find an item in a category whose set number matches n ("3" -> "bottomunderwear3").
   function findItemBySetNumber(p, category, n) {
     if (!n) return 0;
     const items = (window.dressUpCatalog[p] && window.dressUpCatalog[p][category] && window.dressUpCatalog[p][category].items) || {};
@@ -177,31 +186,48 @@
     return ids.find(id => setNumberFromId(id) === String(n)) || 0;
   }
   function applyUnderwearRules(p, category, id) {
-    if (p !== 0) return;                 // girl-only pairing
     if (id === 0 || id === "0") return;
+    const sc = window.selectedClothes[p];
+
+    // A one-piece is a complete set: it replaces the separate top + bottom.
     if (category === "onepieceUnderwear") {
-      window.selectedClothes[p].topUnderwear = 0;
-      window.selectedClothes[p].bottomUnderwear = 0;
+      sc.topUnderwear = 0;
+      sc.bottomUnderwear = 0;
       return;
     }
+
     if (category === "topUnderwear" || category === "bottomUnderwear") {
-      const n = setNumberFromId(id);
-      window.selectedClothes[p].onepieceUnderwear = 0;
-      const topMatch = findItemBySetNumber(p, "topUnderwear", n);
-      const bottomMatch = findItemBySetNumber(p, "bottomUnderwear", n);
-      if (topMatch) window.selectedClothes[p].topUnderwear = topMatch;
-      if (bottomMatch) window.selectedClothes[p].bottomUnderwear = bottomMatch;
+      // Switching to separates always removes the (exclusive) one-piece.
+      const cameFromOnepiece = sc.onepieceUnderwear && sc.onepieceUnderwear !== "0";
+      sc.onepieceUnderwear = 0;
+
+      // Coming OFF a one-piece, complete the set by adding the matching
+      // counterpart (top1 -> also bottom1). But once you're already wearing
+      // separates, leave the other piece alone so you can mix freely
+      // (top1 + bottom1 -> top1 + bottom2).
+      if (cameFromOnepiece) {
+        const other = (category === "topUnderwear") ? "bottomUnderwear" : "topUnderwear";
+        const match = findItemBySetNumber(p, other, setNumberFromId(id));
+        if (match) sc[other] = match;
+      }
     }
   }
   function applyDressRules(p, category, id) {
     if (id === 0 || id === "0") return;
-    if (category === "dress") {
-      window.selectedClothes[p].top = 0;
-      window.selectedClothes[p].bottom = 0;
+    const sc = window.selectedClothes[p];
+    // Full-body garments (dress, bodysuit) replace the separate top + bottom,
+    // and replace each other (you can't wear a dress and a bodysuit at once).
+    if (category === "dress" || category === "bodysuit") {
+      sc.top = 0;
+      sc.bottom = 0;
+      sc.dress = (category === "dress") ? sc.dress : 0;
+      sc.bodysuit = (category === "bodysuit") ? sc.bodysuit : 0;
       return;
     }
+    // Putting on a separate top/bottom removes any full-body garment.
     if (category === "top" || category === "bottom") {
-      window.selectedClothes[p].dress = 0;
+      sc.dress = 0;
+      sc.bodysuit = 0;
     }
   }
   function applyClothingRules(p, category, id) {
@@ -252,6 +278,31 @@
     return true;
   }
 
+  // ---- Cloth wind (used by the troll blower) --------------------------------
+  // A mode sets a per-pet wind strength (0..1); while it's above zero,
+  // skirt-like garments (dresses + anything with "skirt" in its id) swap to
+  // their blown-up art: <name>_w.png (e.g. skirt1.png -> skirt1_w.png).
+  // If the _w image is missing, the garment just keeps its normal art.
+  window.ClothWind = window.ClothWind || {
+    _strength: {},
+    set(p, s) { this._strength[p] = Math.max(0, Math.min(1, s || 0)); },
+    get(p) { return this._strength[p] || 0; },
+    reset() { this._strength = {}; },
+  };
+
+  function isSkirtLike(key, id) {
+    return key === "dress" || /skirt/i.test(String(id));
+  }
+
+  // Lazy-load the "_w" wind variant of a garment image (cached on the image).
+  function windVariant(image) {
+    if (!image || !image.src) return null;
+    if (!image._windImg) {
+      image._windImg = img(image.src.replace(/\.png(\?.*)?$/i, "_w.png$1"));
+    }
+    return image._windImg;
+  }
+
   // ---- UI: button + panel ---------------------------------------------------
   let selectedCategory = catKeys()[0] || (cats[0] && cats[0].key) || "top";
 
@@ -283,7 +334,7 @@
   function updateButtonLabel() {
     const p = activePet();
     const count = catKeys(p).map(k => window.selectedClothes[p] && window.selectedClothes[p][k]).filter(v => v !== 0 && v !== "0" && v != null).length;
-    dressBtn.textContent = `👗 Dress Up (Pet ${p + 1}: ${count} item${count === 1 ? "" : "s"})`;
+    dressBtn.textContent = `👗 Dress Up (${count} item${count === 1 ? "" : "s"})`;
   }
 
   // A clothing item shown as an image thumbnail (falls back to text/emoji).
@@ -340,12 +391,23 @@
     // Title + close
     const title = document.createElement("div");
     title.style.cssText = "font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center;";
-    title.innerHTML = `<span>Pet ${p + 1} Dress Up</span>`;
+    title.innerHTML = `<span>Dress Up</span>`;
     const close = btn("✕");
     close.style.padding = "4px 8px";
     close.onclick = () => { panel.style.display = "none"; };
     title.appendChild(close);
     panel.appendChild(title);
+
+    // Which character to dress (both share the same wardrobe system)
+    const petRow = document.createElement("div");
+    petRow.style.cssText = "display:flex;gap:6px;margin-bottom:8px;";
+    PETS.forEach(pi => {
+      const b = btn(`🐾 Character ${pi + 1}`);
+      if (pi === p) b.style.cssText += "background:#fff7e6;border:2px solid #f59e0b;font-weight:700;";
+      b.onclick = () => { if (typeof window.setActivePet === "function") window.setActivePet(pi); };
+      petRow.appendChild(b);
+    });
+    panel.appendChild(petRow);
 
     // Category tabs
     const row = document.createElement("div");
@@ -413,6 +475,14 @@
   };
 
   // ---- Public draw + lifecycle API (used by every mode) ---------------------
+  // Lets other systems (e.g. outfit_presets.js) refresh the Dress Up panel and
+  // button after they change window.selectedClothes / window.clothingColors.
+  window.refreshDressUpUI = function () {
+    normalizeState();
+    renderPanel();
+    updateButtonLabel();
+  };
+
   window.drawOutfitOverlay = function (ctx, state, x, y, w, h, petIndex) {
     if (window._modeName === "shower") return false;
     const p = typeof petIndex === "number" ? petIndex : activePet();
@@ -424,7 +494,12 @@
       const it = catalog[k] && catalog[k].items && catalog[k].items[id];
       if (!it || !it.img || it.img._failed) return;
       const hex = COLORS[(window.clothingColors[p] && window.clothingColors[p][k]) || DEFAULT_COLOR] || null;
-      const drawImg = hex ? tintedImage(it.img, hex) : it.img;
+      let baseImg = it.img;
+      if (window.ClothWind && window.ClothWind.get(p) > 0.02 && isSkirtLike(k, id)) {
+        const wImg = windVariant(it.img);
+        if (wImg && !wImg._failed && wImg.complete && wImg.naturalWidth) baseImg = wImg;
+      }
+      const drawImg = hex ? tintedImage(baseImg, hex) : baseImg;
       if (safeDraw(ctx, drawImg, x, y, w, h)) drew = true;
     });
     return drew;
@@ -453,10 +528,8 @@
     updateButtonLabel();
   };
 
-  window.setActivePet = function (idx) {
-    const n = Number(idx);
-    if (!Number.isFinite(n)) return;
-    window.activePetIndex = Math.max(0, Math.min(1, Math.floor(n)));
+  window.setActivePet = function (petIndex) {
+    window.activePetIndex = PETS.includes(petIndex) ? petIndex : 0;
     renderPanel();
     updateButtonLabel();
   };
